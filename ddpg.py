@@ -46,10 +46,14 @@ nn.LayerNorm = LayerNorm
 
 
 class Actor(nn.Module):
-    def __init__(self, hidden_size, num_inputs, action_space):
+    def __init__(self, hidden_size, num_inputs, action_space, discrete):
         super(Actor, self).__init__()
+        self.discrete = discrete
         self.action_space = action_space
-        num_outputs = action_space.shape[0]
+        if self.discrete:
+            num_outputs = action_space.n
+        else:
+            num_outputs = action_space.shape[0]
 
         self.linear1 = nn.Linear(num_inputs, hidden_size)
         self.ln1 = nn.LayerNorm(hidden_size)
@@ -69,14 +73,21 @@ class Actor(nn.Module):
         x = self.linear2(x)
         x = self.ln2(x)
         x = F.relu(x)
-        mu = F.tanh(self.mu(x))
+        if self.discrete:
+            mu = F.softmax(self.mu(x), dim=1)
+        else:
+            mu = F.tanh(self.mu(x))
         return mu
 
 class Critic(nn.Module):
-    def __init__(self, hidden_size, num_inputs, action_space):
+    def __init__(self, hidden_size, num_inputs, action_space, discrete):
         super(Critic, self).__init__()
         self.action_space = action_space
-        num_outputs = action_space.shape[0]
+        self.discrete = discrete
+        if self.discrete:
+            num_outputs = action_space.n
+        else:
+            num_outputs = action_space.shape[0]
 
         self.linear1 = nn.Linear(num_inputs, hidden_size)
         self.ln1 = nn.LayerNorm(hidden_size)
@@ -102,19 +113,19 @@ class Critic(nn.Module):
         return V
 
 class DDPG(object):
-    def __init__(self, gamma, tau, hidden_size, num_inputs, action_space):
+    def __init__(self, gamma, tau, hidden_size, num_inputs, action_space, discrete, lr):
 
         self.num_inputs = num_inputs
         self.action_space = action_space
+        self.discrete = discrete
+        self.actor = Actor(hidden_size, self.num_inputs, self.action_space, discrete)
+        self.actor_target = Actor(hidden_size, self.num_inputs, self.action_space, discrete)
+        self.actor_perturbed = Actor(hidden_size, self.num_inputs, self.action_space, discrete)
+        self.actor_optim = Adam(self.actor.parameters(), lr=lr[0])
 
-        self.actor = Actor(hidden_size, self.num_inputs, self.action_space)
-        self.actor_target = Actor(hidden_size, self.num_inputs, self.action_space)
-        self.actor_perturbed = Actor(hidden_size, self.num_inputs, self.action_space)
-        self.actor_optim = Adam(self.actor.parameters(), lr=1e-4)
-
-        self.critic = Critic(hidden_size, self.num_inputs, self.action_space)
-        self.critic_target = Critic(hidden_size, self.num_inputs, self.action_space)
-        self.critic_optim = Adam(self.critic.parameters(), lr=1e-3)
+        self.critic = Critic(hidden_size, self.num_inputs, self.action_space, discrete)
+        self.critic_target = Critic(hidden_size, self.num_inputs, self.action_space, discrete)
+        self.critic_optim = Adam(self.critic.parameters(), lr=lr[1])
 
         self.gamma = gamma
         self.tau = tau
@@ -123,7 +134,7 @@ class DDPG(object):
         hard_update(self.critic_target, self.critic)
 
 
-    def select_action(self, state, action_noise=None, param_noise=None):
+    def select_action(self, state, action_noise=None, param_noise=None, explore=True):
         self.actor.eval()
         if param_noise is not None: 
             mu = self.actor_perturbed((Variable(state)))
@@ -136,7 +147,13 @@ class DDPG(object):
         if action_noise is not None:
             mu += torch.Tensor(action_noise.noise())
 
-        return mu.clamp(-1, 1)
+        if self.discrete:
+            if explore:
+                return mu.multinomial(1), mu
+            else:
+                return mu.max(1, keepdim=True)[1], mu
+        else:
+            return mu.clamp(-1, 1), None
 
 
     def update_parameters(self, batch):
