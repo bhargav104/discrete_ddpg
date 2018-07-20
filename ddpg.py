@@ -118,13 +118,14 @@ class DDPG(object):
         self.num_inputs = num_inputs
         self.action_space = action_space
         self.discrete = discrete
-        self.actor = Actor(hidden_size, self.num_inputs, self.action_space, discrete)
-        self.actor_target = Actor(hidden_size, self.num_inputs, self.action_space, discrete)
-        self.actor_perturbed = Actor(hidden_size, self.num_inputs, self.action_space, discrete)
+        self.device = torch.device('cuda')
+        self.actor = Actor(hidden_size, self.num_inputs, self.action_space, discrete).to(self.device)
+        self.actor_target = Actor(hidden_size, self.num_inputs, self.action_space, discrete).to(self.device)
+        self.actor_perturbed = Actor(hidden_size, self.num_inputs, self.action_space, discrete).to(self.device)
         self.actor_optim = Adam(self.actor.parameters(), lr=lr[0])
 
-        self.critic = Critic(hidden_size, self.num_inputs, self.action_space, discrete)
-        self.critic_target = Critic(hidden_size, self.num_inputs, self.action_space, discrete)
+        self.critic = Critic(hidden_size, self.num_inputs, self.action_space, discrete).to(self.device)
+        self.critic_target = Critic(hidden_size, self.num_inputs, self.action_space, discrete).to(self.device)
         self.critic_optim = Adam(self.critic.parameters(), lr=lr[1])
 
         self.gamma = gamma
@@ -157,11 +158,11 @@ class DDPG(object):
 
 
     def update_parameters(self, batch):
-        state_batch = Variable(torch.cat(batch.state))
-        action_batch = Variable(torch.cat(batch.action))
-        reward_batch = Variable(torch.cat(batch.reward))
-        mask_batch = Variable(torch.cat(batch.mask))
-        next_state_batch = Variable(torch.cat(batch.next_state))
+        state_batch = torch.cat(batch.state)
+        action_batch = torch.cat(batch.action)
+        reward_batch = torch.cat(batch.reward)
+        mask_batch = torch.cat(batch.mask)
+        next_state_batch = torch.cat(batch.next_state)
         
         next_action_batch = self.actor_target(next_state_batch)
         next_state_action_values = self.critic_target(next_state_batch, next_action_batch)

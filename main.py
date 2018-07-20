@@ -83,7 +83,7 @@ else:
 rewards = []
 total_numsteps = 0
 updates = 0
-
+device = torch.device('cuda')
 for i_episode in range(args.num_episodes):
     state = torch.Tensor([env.reset()])
 
@@ -97,19 +97,20 @@ for i_episode in range(args.num_episodes):
 
     episode_reward = 0
     while True:
+        state = state.to(device)
         action, action_probs = agent.select_action(state, ounoise, param_noise)
         if args.discrete:
             use_action = action.item()
         else:
-            use_action = action.numpy()[0]
+            use_action = action.cpu().numpy()[0]
         next_state, reward, done, _ = env.step(use_action)
         total_numsteps += 1
         episode_reward += reward
 
-        action = torch.LongTensor(action)
-        mask = torch.Tensor([not done])
-        next_state = torch.Tensor([next_state])
-        reward = torch.Tensor([reward])
+        #action = torch.LongTensor(action)
+        mask = torch.Tensor([not done]).to(device)
+        next_state = torch.Tensor([next_state]).to(device)
+        reward = torch.Tensor([reward]).to(device)
         if args.discrete:
             memory.push(state, action_probs, mask, next_state, reward)
         else:
@@ -148,11 +149,11 @@ for i_episode in range(args.num_episodes):
         state = torch.Tensor([env.reset()])
         episode_reward = 0
         while True:
-            action, action_probs = agent.select_action(state)
+            action, action_probs = agent.select_action(state.to(device))
             if args.discrete:
                 use_action = action.item()
             else:
-                use_action = action.numpy()[0]
+                use_action = action.cpu().numpy()[0]
             next_state, reward, done, _ = env.step(use_action)
             episode_reward += reward
 
