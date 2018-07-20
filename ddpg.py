@@ -149,26 +149,27 @@ class DDPG(object):
             mu += torch.Tensor(action_noise.noise())
 
         if self.discrete:
+            entropy = -(torch.log(mu) * mu).sum(1).mean()
             if explore:
-                return mu.multinomial(1), mu
+                return mu.multinomial(1), mu, entropy
             else:
-                return mu.max(1, keepdim=True)[1], mu
+                return mu.max(1, keepdim=True)[1], mu, entropy
         else:
-            return mu.clamp(-1, 1), None
+            return mu.clamp(-1, 1), None, None
 
 
     def update_parameters(self, batch):
-        state_batch = torch.cat(batch.state)
-        action_batch = torch.cat(batch.action)
-        reward_batch = torch.cat(batch.reward)
-        mask_batch = torch.cat(batch.mask)
-        next_state_batch = torch.cat(batch.next_state)
+        state_batch = torch.stack(batch.state, dim=0)
+        action_batch = torch.stack(batch.action, dim=0)
+        reward_batch = torch.stack(batch.reward, dim=0)
+        mask_batch = torch.stack(batch.mask, dim=0)
+        next_state_batch = torch.stack(batch.next_state, dim=0)
         
         next_action_batch = self.actor_target(next_state_batch)
         next_state_action_values = self.critic_target(next_state_batch, next_action_batch)
 
-        reward_batch = reward_batch.unsqueeze(1)
-        mask_batch = mask_batch.unsqueeze(1)
+        #reward_batch = reward_batch.unsqueeze(1)
+        #mask_batch = mask_batch.unsqueeze(1)
         expected_state_action_batch = reward_batch + (self.gamma * mask_batch * next_state_action_values)
 
         self.critic_optim.zero_grad()
@@ -182,7 +183,6 @@ class DDPG(object):
         self.actor_optim.zero_grad()
 
         policy_loss = -self.critic((state_batch),self.actor((state_batch)))
-
         policy_loss = policy_loss.mean()
         policy_loss.backward()
         self.actor_optim.step()
