@@ -46,8 +46,9 @@ nn.LayerNorm = LayerNorm
 
 
 class Actor(nn.Module):
-    def __init__(self, hidden_size, num_inputs, action_space, discrete):
+    def __init__(self, hidden_size, num_inputs, action_space, discrete, no_ln):
         super(Actor, self).__init__()
+        self.no_ln = no_ln
         self.discrete = discrete
         self.action_space = action_space
         if self.discrete:
@@ -68,10 +69,12 @@ class Actor(nn.Module):
     def forward(self, inputs):
         x = inputs
         x = self.linear1(x)
-        x = self.ln1(x)
+        if not self.no_ln:
+            x = self.ln1(x)
         x = F.relu(x)
         x = self.linear2(x)
-        x = self.ln2(x)
+        if not self.no_ln:
+            x = self.ln2(x)
         x = F.relu(x)
         if self.discrete:
             mu = F.softmax(self.mu(x), dim=1)
@@ -80,8 +83,9 @@ class Actor(nn.Module):
         return mu
 
 class Critic(nn.Module):
-    def __init__(self, hidden_size, num_inputs, action_space, discrete):
+    def __init__(self, hidden_size, num_inputs, action_space, discrete, no_ln):
         super(Critic, self).__init__()
+        self.no_ln = no_ln
         self.action_space = action_space
         self.discrete = discrete
         if self.discrete:
@@ -102,30 +106,33 @@ class Critic(nn.Module):
     def forward(self, inputs, actions):
         x = inputs
         x = self.linear1(x)
-        x = self.ln1(x)
+        if not self.no_ln:
+            x = self.ln1(x)
         x = F.relu(x)
 
         x = torch.cat((x, actions), 1)
         x = self.linear2(x)
-        x = self.ln2(x)
+        if not self.no_ln:
+            x = self.ln2(x)
         x = F.relu(x)
         V = self.V(x)
         return V
 
 class DDPG(object):
-    def __init__(self, gamma, tau, hidden_size, num_inputs, action_space, discrete, lr):
+    def __init__(self, gamma, tau, hidden_size, num_inputs, action_space, discrete, lr, args):
 
+        self.args = args
         self.num_inputs = num_inputs
         self.action_space = action_space
         self.discrete = discrete
         self.device = torch.device('cuda')
-        self.actor = Actor(hidden_size, self.num_inputs, self.action_space, discrete).to(self.device)
-        self.actor_target = Actor(hidden_size, self.num_inputs, self.action_space, discrete).to(self.device)
-        self.actor_perturbed = Actor(hidden_size, self.num_inputs, self.action_space, discrete).to(self.device)
+        self.actor = Actor(hidden_size, self.num_inputs, self.action_space, discrete, args.no_ln).to(self.device)
+        self.actor_target = Actor(hidden_size, self.num_inputs, self.action_space, discrete, args.no_ln).to(self.device)
+        self.actor_perturbed = Actor(hidden_size, self.num_inputs, self.action_space, discrete, args.no_ln).to(self.device)
         self.actor_optim = Adam(self.actor.parameters(), lr=lr[0])
 
-        self.critic = Critic(hidden_size, self.num_inputs, self.action_space, discrete).to(self.device)
-        self.critic_target = Critic(hidden_size, self.num_inputs, self.action_space, discrete).to(self.device)
+        self.critic = Critic(hidden_size, self.num_inputs, self.action_space, discrete, args.no_ln).to(self.device)
+        self.critic_target = Critic(hidden_size, self.num_inputs, self.action_space, discrete, args.no_ln).to(self.device)
         self.critic_optim = Adam(self.critic.parameters(), lr=lr[1])
 
         self.gamma = gamma

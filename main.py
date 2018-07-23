@@ -61,6 +61,8 @@ parser.add_argument('--log-dir', type=str, default='results', help='log director
 parser.add_argument('--update-fq', type=int, default=1, help='how often to update parameters')
 parser.add_argument('--log-interval', type=int, default=50, help='log interval')
 parser.add_argument('--vis', action='store_true', default=False, help='visdom visualization')
+parser.add_argument('--no-ln', action='store_true', default=False, help='No layer normalization')
+parser.add_argument('--warmup', type=int, default=10000, help='Number of insertions before updates')
 
 args = parser.parse_args()
 
@@ -92,7 +94,7 @@ if args.algo == "NAF":
                       env.observation_space.shape[0], env.action_space)
 else:
     agent = DDPG(args.gamma, args.tau, args.hidden_size,
-                      env.observation_space.shape[0], env.action_space, args.discrete, (args.actor_lr, args.critic_lr))
+                      env.observation_space.shape[0], env.action_space, args.discrete, (args.actor_lr, args.critic_lr), args)
 
 memory = ReplayMemory(args.replay_size)
 
@@ -128,6 +130,7 @@ for step in range(int(num_steps)):
     episode_reward = 0
     state = state.to(device)
     action, action_probs, entropy = agent.select_action(state, ounoise, param_noise)
+    #print(action.cpu().numpy())
     if args.discrete:
        use_action = action.squeeze(1).cpu().numpy()
     else:
@@ -153,7 +156,7 @@ for step in range(int(num_steps)):
 
     state = next_state
 
-    if len(memory) > args.batch_size and step % args.update_fq == 0:
+    if len(memory) > args.warmup and step % args.update_fq == 0:
         for _ in range(args.updates_per_step):
             transitions = memory.sample(args.batch_size)
             batch = Transition(*zip(*transitions))
@@ -178,7 +181,7 @@ for step in range(int(num_steps)):
         param_noise.adapt(ddpg_dist)
 
     rewards.append(episode_reward)
-    if step % args.log_interval == args.log_interval - 1:
+    if step % args.log_interval == args.log_interval - 1 and len(memory) > args.warmup:
         '''
         state = torch.Tensor([env.reset()])
         episode_reward = 0
@@ -212,7 +215,7 @@ for step in range(int(num_steps)):
                        final_rewards.max(), 
                        value_loss, policy_loss, entropy.item()))
 
-    if args.vis and step % args.log_interval == 0:
+    if args.vis and step % args.log_interval == 0 and len(memory) > args.warmup:
         try:
             win = visdom_plot(viz, win, args.log_dir, args.env_name, 'disc_ddpg', args.num_frames)
         except IOError:
